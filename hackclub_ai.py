@@ -31,9 +31,9 @@ CACHE_DIR = HOME / "cache"
 MCP_FILE = Path(os.getenv("HC_MCP_CONFIG", str(HOME / "mcp.json")))
 MAX_FILE = int(os.getenv("HC_MAX_FILE", "5000000"))
 MAX_DOCX_FILE = int(os.getenv("HC_MAX_DOCX_FILE", "30000000"))
-INDEX_VERSION = "v2"
+INDEX_VERSION = "v3"
 MAX_CTX = int(os.getenv("HC_MAX_CONTEXT", "180000"))
-MAX_FILES = int(os.getenv("HC_MAX_FILES", "120"))
+MAX_FILES = int(os.getenv("HC_MAX_FILES", "400"))
 MAX_TURNS = int(os.getenv("HC_MAX_TURNS", "20"))
 CACHE_TTL = int(os.getenv("HC_CACHE_TTL", "86400"))
 MCP_TTL = int(os.getenv("HC_MCP_CACHE_TTL", "300"))
@@ -862,46 +862,86 @@ class Indexer:
         body = f"### Attachment: {path.name}\n```text\n{text[:MAX_CTX]}\n```"
         return Attachment(aid, f"File: {path.name}", "text", path, body, len(body))
     def dir(self, root, aid):
-        blocks, tree, total, count, skipped = [], [f"{root.name}/"], 0, 0, 0
+        all_files = []
+        all_dirs = []
         for base, dirs, files in os.walk(root):
             dirs[:] = sorted(d for d in dirs if d not in IGNORE_DIRS and not d.startswith("."))
-            rel = Path(base).relative_to(root); indent = "  " * (len(rel.parts) + 1)
-            tree += [f"{indent}{d}/" for d in dirs]
+            rel = Path(base).relative_to(root)
+            for d in dirs:
+                all_dirs.append((rel / d).as_posix())
             for name in sorted(files):
-                if name in IGNORE_FILES or name.startswith("."): continue
-                path = Path(base) / name
-                label = self.file_label(path)
-                tree.append(f"{indent}{label}")
-                if count >= MAX_FILES or total >= MAX_CTX:
-                    skipped += 1
+                if name in IGNORE_FILES or name.startswith("."):
                     continue
-                text = self.text(path)
-                if not text:
-                    skipped += 1
-                    continue
-                r = path.relative_to(root).as_posix()
-                chunk = f"--- START FILE: {r} ---\n{text}\n--- END FILE: {r} ---"[:MAX_CTX - total]
-                blocks.append(chunk); total += len(chunk); count += 1
-        header = ["### Workspace: " + root.name, "```text", *tree[:400], "```"]
-        if skipped:
-            header.append(f"_({skipped} file(s) listed in the tree but not included in context — unsupported type, too large, or limit reached.)_")
-        body = "\n".join(header + blocks) if blocks else "\n".join(header)
-        return Attachment(aid, f"Workspace: {root.name}", "text", root, body, len(body), count)
-    def file_label(self, path):
-        try:
-            size = path.stat().st_size
+                rel_path = (rel / name).as_posix()
+                all_files.append((Path(base) / name, rel_path, len(rel.parts)))
+        all_files.sort(key=lambda x: (x[2], x[1].lower()))
+        loaded = {}
+        not_loaded = {}
+        total = 0
+        count = 0
+        for path, rel_path, _ in all_files:
             ext = path.suffix.lower()
-            if ext == ".docx":
-                if size > MAX_DOCX_FILE:
-                    return f"{path.name}  [skipped: {size/1024/1024:.1f}MB > docx limit]"
-                return path.name
-            if ext not in TEXT_EXT:
-                return f"{path.name}  [skipped: unsupported type]"
-            if size > MAX_FILE:
-                return f"{path.name}  [skipped: {size/1024/1024:.1f}MB > limit]"
-            return path.name
-        except Exception:
-            return path.name
+            if ext not in TEXT_EXT | {".docx"}:
+                not_loaded[rel_path] = "unsupported type"
+                continue
+            try:
+                size = path.stat().st_size
+            except Exception:
+                not_loaded[rel_path] = "unreadable"
+                continue
+            if ext == ".docx" and size > MAX_DOCX_FILE:
+                not_loaded[rel_path] = f"docx {size/1024/1024:.1f}MB > {MAX_DOCX_FILE/1024/1024:.0f}MB limit"
+                continue
+            if ext != ".docx" and size > MAX_FILE:
+                not_loaded[rel_path] = f"{size/1024/1024:.1f}MB > {MAX_FILE/1024/1024:.0f}MB limit"
+                continue
+            if count >= MAX_FILES:
+                not_loaded[rel_path] = "per-workspace file limit reached"
+                continue
+            if total >= MAX_CTX:
+                not_loaded[rel_path] = "context budget filled"
+                continue
+            text = self.text(path)
+            if not text:
+                not_loaded[rel_path] = "empty / parse failed"
+                continue
+            chunk_body = f"--- START FILE: {rel_path} ---\n{text}\n--- END FILE: {rel_path} ---"
+            if total + len(chunk_body) > MAX_CTX:
+                chunk_body = chunk_body[:MAX_CTX - total]
+            loaded[rel_path] = chunk_body
+            total += len(chunk_body)
+            count += 1
+        kids_dirs = {}
+        kids_files = {}
+        for d in set(all_dirs):
+            parent = "/".join(d.split("/")[:-1])
+            kids_dirs.setdefault(parent, []).append(d.split("/")[-1])
+        for path, rel_path, _ in all_files:
+            parent = "/".join(rel_path.split("/")[:-1])
+            note = None if rel_path in loaded else not_loaded.get(rel_path, "not loaded")
+            kids_files.setdefault(parent, []).append((path.name, note, rel_path))
+        tree_lines = [f"{root.name}/"]
+        def render(parent_path, depth):
+            indent = "  " * (depth + 1)
+            for d in sorted(kids_dirs.get(parent_path, []), key=str.lower):
+                tree_lines.append(f"{indent}{d}/")
+                child_parent = f"{parent_path}/{d}" if parent_path else d
+                render(child_parent, depth + 1)
+            for name, note, _ in sorted(kids_files.get(parent_path, []), key=lambda x: x[0].lower()):
+                line = f"{indent}{name}"
+                if note:
+                    line += f"  [not loaded: {note}]"
+                tree_lines.append(line)
+        render("", 0)
+        notice = (
+            f"Workspace dump — {count}/{len(all_files)} files loaded into context, "
+            f"{len(not_loaded)} listed in tree only. .docx files ARE parsed (text + tables); "
+            f"if a .docx is marked [not loaded] the reason is shown next to it."
+        )
+        header = ["### Workspace: " + root.name, notice, "```text", *tree_lines[:600], "```"]
+        body_parts = header + [loaded[k] for k in sorted(loaded.keys(), key=lambda x: x.lower())]
+        body = "\n".join(body_parts)
+        return Attachment(aid, f"Workspace: {root.name}", "text", root, body, len(body), count)
     def text(self, path):
         try:
             ext = path.suffix.lower()
