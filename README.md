@@ -1,84 +1,114 @@
+<div align="center">
+
 # HackClub CLI
 
-A polished terminal chat client for the [Hack Club AI](https://ai.hackclub.com) proxy. Free access to GPT, Claude, Gemini and friends — wrapped in a fast, keyboard-first TUI with attachments, skills, MCP / Composio integrations, exports, and theming.
+**A keyboard-first terminal chat client for the Hack Club AI proxy.**
 
-```
-─────────────────────────────────────────────────────
-You
+Free access to frontier models — GPT, Claude, Gemini — through a fast, modern TUI with attachments, skills, MCP integrations, exports, and theming.
 
-  send me a haiku about hack club
+[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#requirements)
 
-  thinking
+</div>
 
-  The user wants a short, playful haiku...
+---
 
-Assistant
+> [!IMPORTANT]
+> **Disclaimer.** This project is an unofficial, community-built client. It is **not affiliated with, endorsed by, or supported by Hack Club, Composio, OpenRouter, or any model provider.**
+>
+> Use of upstream services (Hack Club AI, Composio, etc.) is subject to their respective terms of service. You alone are responsible for ensuring your usage complies with those terms, your eligibility for the services, and any applicable laws.
+>
+> The author of this project provides this software **"as is", without warranty of any kind**, and **accepts no liability** for any consequences arising from its use — including but not limited to account termination, service disruption, data loss, or any direct, indirect, incidental, or consequential damages.
+>
+> **By installing or using this software you agree that any decision to do so, and any consequences thereof, are entirely your own.** See [LICENSE](LICENSE) for the full legal text.
 
-  Code in the moonlight
-  hack clubbers tinkering on —
-  small worlds blooming bright.
-```
+---
+
+## Table of contents
+
+- [Features](#features)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Usage](#usage)
+  - [Keyboard shortcuts](#keyboard-shortcuts)
+  - [Slash commands](#slash-commands)
+  - [One-shot mode](#one-shot-mode)
+- [MCP & Composio](#mcp--composio)
+- [Environment variables](#environment-variables)
+- [Files & data layout](#files--data-layout)
+- [Updating](#updating)
+- [Uninstalling](#uninstalling)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
 ---
 
 ## Features
 
-- **Streaming chat** with any model on the Hack Club AI proxy (GPT, Claude, Gemini, etc.)
-- **Slash command menu** with live filtering (`/model`, `/attach`, `/export`, `/skills`, …)
-- **Attachments** — files, folders, images, `.docx`. Folder ingestion is cached.
-- **Skills** — one-shot expert prompts (`/skill:code`, `/skill:debug`, `/skill:explain`, …)
-- **MCP / Composio** — call external integrations (Gmail, GitHub, Slack, Notion, etc.) from chat
-- **Exports** — `/export` to download the conversation as Markdown or JSON
+- **Streaming chat** across any model on the Hack Club AI proxy
+- **Slash-command menu** with live filtering — `/model`, `/attach`, `/export`, `/skills`, and more
+- **Attachments** — single files, entire folders, images, and `.docx` documents (folders are cached for fast re-attach)
+- **Skills** — curated one-shot expert prompts (`/skill:code`, `/skill:debug`, `/skill:explain`, …)
+- **MCP / Composio integration** — call Gmail, GitHub, Slack, Notion, Linear and 200+ other apps from chat
+- **Exports** — save conversations as Markdown or JSON to `~/Downloads`
 - **Themes** — `dark` and `light`
-- **Compact mode** — smaller context, tighter UI
-- **Token counter + context % gauge** in the status bar
-- **Local cache** for indexed folders and tool listings
+- **Compact mode** — reduced context window and tighter UI for low-bandwidth sessions
+- **Status bar** with model, context %, MCP state, and live token counts
+- **Local cache** for indexed folders and MCP tool listings
 
 ---
 
 ## Requirements
 
-- macOS or Linux
-- **Python 3.10+** (tested on 3.14)
-- A **Hack Club AI key** — get one free at <https://ai.hackclub.com>
-- *(optional)* A **Composio API key** for MCP integrations — get one at <https://app.composio.dev>
+| | |
+|---|---|
+| **Operating system** | macOS or Linux |
+| **Python** | 3.10 or newer (developed on 3.14) |
+| **Hack Club AI key** | Free at <https://ai.hackclub.com> *(intended for Hack Club members — see [Disclaimer](#disclaimer))* |
+| **Composio API key** | Optional. Free at <https://app.composio.dev> — required only for MCP integrations |
 
 ---
 
-## Install
+## Installation
 
-### 1. Clone the repo
+### 1. Clone the repository
 
 ```bash
 git clone https://github.com/random-guy-05/hackclub-cli.git ~/Documents/hackclub-cli
 cd ~/Documents/hackclub-cli
 ```
 
-### 2. Create a virtualenv and install deps
+### 2. Create a virtual environment and install dependencies
 
 ```bash
 python3 -m venv ~/.hackclub_venv
 ~/.hackclub_venv/bin/pip install -r requirements.txt
 ```
 
-### 3. Export your API key(s)
+### 3. Configure your API key(s)
 
-Add to `~/.bashrc` (or `~/.zshrc`):
-
-```bash
-export HACKCLUB_API_KEY="sk-hc-v1-..."          # required
-export COMPOSIO_API_KEY="ck_..."                 # optional — enables MCP/Composio tools
-```
-
-Reload your shell:
+Add the following to `~/.bashrc` or `~/.zshrc`:
 
 ```bash
-source ~/.bashrc
+# Required
+export HACKCLUB_API_KEY="sk-hc-v1-..."
+
+# Optional — enables MCP / Composio integrations
+export COMPOSIO_API_KEY="ck_..."
 ```
 
-### 4. Add a launcher alias
+Then reload your shell:
 
-Add this function to `~/.bashrc` (or `~/.zshrc`):
+```bash
+source ~/.bashrc   # or: source ~/.zshrc
+```
+
+### 4. Add the launcher
+
+Add this function to the same shell config file:
 
 ```bash
 hackclub() {
@@ -86,60 +116,61 @@ hackclub() {
 }
 ```
 
-Reload your shell, then run:
+Reload your shell once more, then launch:
 
 ```bash
 hackclub
 ```
 
-That's it. On first launch you'll be asked to pick a workspace folder or use Playground mode.
+On first run you'll be prompted to choose between **Playground mode** (free chat) and **Workspace mode** (attach a folder for context).
+
+---
+
+## Configuration
+
+All configuration lives in environment variables (see [Environment variables](#environment-variables)) and a small preferences file at `~/.hackclub-ai-shell/prefs.json`, which the CLI manages automatically when you change themes, models, or modes.
 
 ---
 
 ## Usage
 
-### Modes
-
-| Mode | Description |
-|---|---|
-| **Playground** | Chat freely with no attached context |
-| **Workspace** | Attach a folder; its files are indexed and added to context |
-
-### Keyboard
+### Keyboard shortcuts
 
 | Key | Action |
 |---|---|
 | `Enter` | Send message |
-| `Ctrl+J` | New line (multi-line prompts) |
-| `↑` / `↓` | History (or slash-menu navigation) |
+| `Ctrl+J` | Insert a new line (multi-line prompts) |
+| `↑` / `↓` | Browse prompt history (or navigate the slash menu) |
 | `Tab` | Complete slash command |
-| `PgUp` / `PgDn` | Scroll output |
-| `Ctrl+G` | Jump to latest output |
+| `PageUp` / `PageDown` | Scroll the output pane |
+| `Ctrl+G` | Jump to the latest output |
 | `Ctrl+C` / `/exit` | Quit |
 
 ### Slash commands
 
-| Command | What it does |
+| Command | Description |
 |---|---|
 | `/help` | List all commands |
-| `/model [name\|#]` | Switch model (or open picker) |
+| `/model [name\|#]` | Switch model (or open the picker) |
 | `/attach [path]` | Attach a file or folder |
 | `/drop [#\|all]` | Remove attachment(s) |
 | `/context` | List current attachments |
-| `/skills` | List skill shortcuts |
+| `/skills` | List available skill shortcuts |
 | `/skill:<name>` | Run a skill prompt (e.g. `/skill:debug`) |
 | `/system [text]` | View or set the system prompt |
 | `/save [path]` | Save the last reply to a file |
-| `/copy` | Copy the last reply to clipboard |
-| `/export [json]` | Download chat to `~/Downloads` |
+| `/copy` | Copy the last reply to the clipboard |
+| `/export [json]` | Download the conversation to `~/Downloads` |
 | `/mcp` | List connected MCP tools |
-| `/cache [clear]` | Cache stats / clear cache |
+| `/cache [clear]` | Show cache stats or clear the cache |
 | `/theme [dark\|light]` | Switch theme |
 | `/compact [on\|off]` | Toggle compact mode |
 | `/clear` | Clear chat history |
 | `/exit` | Quit |
 
-You can also run a one-shot prompt non-interactively:
+### One-shot mode
+
+Pass a prompt as an argument to run non-interactively:
 
 ```bash
 hackclub "summarize the file ~/notes/today.md"
@@ -147,22 +178,24 @@ hackclub "summarize the file ~/notes/today.md"
 
 ---
 
-## MCP / Composio integration
+## MCP & Composio
 
-The CLI ships with [Composio](https://composio.dev) MCP enabled out of the box. With `COMPOSIO_API_KEY` set, the assistant can call hundreds of integrations (Gmail, GitHub, Slack, Notion, Linear, etc.) directly from chat.
+The CLI ships with [Composio](https://composio.dev) MCP support enabled by default. When `COMPOSIO_API_KEY` is set, the assistant can invoke external integrations directly from chat.
 
 ### Setup
 
-1. Sign up at <https://app.composio.dev> and grab your API key.
-2. `export COMPOSIO_API_KEY="ck_..."` in your shell config.
-3. Connect the apps you want from the Composio dashboard.
-4. In the CLI, just ask: *"send an email to bob@example.com saying I'm running late"* — the assistant will search for the right tool and execute it.
+1. Create a free account at <https://app.composio.dev>.
+2. Copy your API key and export it as `COMPOSIO_API_KEY`.
+3. Connect the apps you want from the Composio dashboard (Gmail, GitHub, Slack, etc.).
+4. Restart the CLI — the status bar should now read **`mcp connected`**.
 
-The status bar shows `mcp connected` when integrations are ready. Run `/mcp` to list all available tools.
+Ask naturally, e.g. *"send an email to alex@example.com saying I'll be late"*. The assistant will search for the right tool and execute it.
+
+Run `/mcp` to list every available tool.
 
 ### Custom MCP servers
 
-Add additional MCP servers via `~/mcp.json`:
+Define additional servers in `~/mcp.json`:
 
 ```json
 {
@@ -179,7 +212,7 @@ Add additional MCP servers via `~/mcp.json`:
 }
 ```
 
-Variables like `${MY_TOKEN}` are expanded from your environment.
+Environment variables in the form `${NAME}` are expanded at load time.
 
 ---
 
@@ -188,40 +221,26 @@ Variables like `${MY_TOKEN}` are expanded from your environment.
 | Variable | Required | Default | Purpose |
 |---|---|---|---|
 | `HACKCLUB_API_KEY` | yes | — | Hack Club AI proxy key |
-| `COMPOSIO_API_KEY` | no | — | Enables Composio MCP tools |
+| `COMPOSIO_API_KEY` | no | — | Enables Composio MCP integrations |
 | `HACKCLUB_AI_BASE_URL` | no | `https://ai.hackclub.com/proxy/v1` | Override the API endpoint |
 | `HC_DEFAULT_MODEL` | no | `~openai/gpt-mini-latest` | Default model on launch |
-| `HC_MCP_CONFIG` | no | `~/mcp.json` | Path to MCP config file |
+| `HC_MCP_CONFIG` | no | `~/mcp.json` | Path to MCP configuration file |
 | `HC_MCP_CACHE_TTL` | no | `300` | MCP tool list cache TTL (seconds) |
 
 ---
 
-## Files & data
+## Files & data layout
 
 | Path | Purpose |
 |---|---|
 | `~/Documents/hackclub-cli/hackclub_ai.py` | The CLI |
-| `~/.hackclub_venv/` | Python virtualenv with dependencies |
-| `~/.hackclub-ai-shell/prefs.json` | Saved preferences (model, theme, compact) |
+| `~/.hackclub_venv/` | Virtual environment with dependencies |
+| `~/.hackclub-ai-shell/prefs.json` | Saved preferences (model, theme, compact mode) |
 | `~/.hackclub-ai-shell/history` | Prompt history |
-| `~/.hackclub-ai-shell/cache/` | Indexed folder cache & MCP tool cache |
-| `~/Downloads/hackclub-chat-*.md` | Exported conversations |
+| `~/.hackclub-ai-shell/cache/` | Indexed folder cache and MCP tool cache |
+| `~/Downloads/hackclub-chat-*.{md,json}` | Exported conversations |
 
-Nothing in this repo contains secrets — all keys are read from your shell environment.
-
----
-
-## Troubleshooting
-
-**`Missing HACKCLUB_API_KEY`** — Export the key in your shell config and re-source it.
-
-**`mcp unavailable`** — Either `COMPOSIO_API_KEY` isn't set, or there's no `~/mcp.json`. Composio is optional.
-
-**Arrow keys insert escape codes** — Make sure your terminal supports ANSI input. Most modern terminals do; the legacy macOS Terminal sometimes doesn't.
-
-**Model says it can't access integrations** — Restart the CLI to pick up `COMPOSIO_API_KEY`. The status bar should say `mcp connected`.
-
-**Stuck or laggy output** — Use `/compact on` to reduce UI work and shrink context.
+No secrets are ever written to this repository — all keys are read from your shell environment at runtime.
 
 ---
 
@@ -235,15 +254,53 @@ git pull
 
 ---
 
-## Uninstall
+## Uninstalling
 
 ```bash
 rm -rf ~/Documents/hackclub-cli ~/.hackclub_venv ~/.hackclub-ai-shell
-# then remove the hackclub() function and exports from ~/.bashrc
 ```
+
+Then remove the `hackclub()` function and `HACKCLUB_API_KEY` / `COMPOSIO_API_KEY` exports from your shell config.
+
+---
+
+## Troubleshooting
+
+| Symptom | Resolution |
+|---|---|
+| `Missing HACKCLUB_API_KEY` | Export the variable and reload your shell config. |
+| `mcp unavailable` | Either `COMPOSIO_API_KEY` is not set or `~/mcp.json` is missing. Composio is optional. |
+| Status shows `mcp connected` but tools fail to execute | Restart the CLI, then try again. Check connected apps in the Composio dashboard. |
+| Arrow keys or control codes appear as literal characters | Your terminal isn't passing ANSI input correctly. Try a modern terminal (iTerm2, Alacritty, Kitty, Ghostty). |
+| UI feels laggy on long sessions | Enable compact mode: `/compact on`. |
+
+---
+
+## Contributing
+
+Contributions, issues, and feature requests are welcome. Please open an issue or pull request on [GitHub](https://github.com/random-guy-05/hackclub-cli).
+
+When reporting bugs, please include:
+
+- Operating system and version
+- Python version (`python3 --version`)
+- Terminal emulator
+- Steps to reproduce and the full error output
+
+---
+
+## Disclaimer
+
+This project is **not affiliated with Hack Club, Composio, OpenRouter, or any model provider**. It is an independent, community-built client.
+
+Hack Club AI is intended for current Hack Club members. **Use of the Hack Club AI proxy by non-members may violate the service's terms of use.** It is your responsibility to verify your eligibility and to comply with the terms of every upstream service you connect to (including Composio and any model provider whose models you invoke).
+
+The author of this project provides this software **"as is"** under the terms of the [MIT License](LICENSE) and makes **no warranties and accepts no liability** for any outcome resulting from its installation or use, including but not limited to: account suspension or termination by any upstream provider, loss of data, service disruption, financial loss, or any other direct, indirect, incidental, or consequential damages.
+
+**By installing or using this software, you acknowledge that you are doing so entirely at your own risk and on your own initiative.**
 
 ---
 
 ## License
 
-MIT — do whatever you want.
+Released under the [MIT License](LICENSE).
