@@ -9,6 +9,9 @@ Free access to frontier models — GPT, Claude, Gemini — through a fast, moder
 [![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey.svg)](#requirements)
+[![GitHub stars](https://img.shields.io/github/stars/random-guy-05/hackclub-cli?style=social)](https://github.com/random-guy-05/hackclub-cli/stargazers)
+
+_If this project is useful to you, please consider [starring it on GitHub](https://github.com/random-guy-05/hackclub-cli) — it helps others discover it and motivates continued development._
 
 </div>
 
@@ -42,6 +45,7 @@ Free access to frontier models — GPT, Claude, Gemini — through a fast, moder
 - [Uninstalling](#uninstalling)
 - [Troubleshooting](#troubleshooting)
 - [Contributing](#contributing)
+- [Support](#support)
 - [License](#license)
 
 ---
