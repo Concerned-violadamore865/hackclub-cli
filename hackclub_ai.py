@@ -103,7 +103,7 @@ CMD_DESCRIPTIONS = {
     "/export": "Download chat as markdown or json",
     "/system": "View or set the system prompt",
     "/mcp": "List connected MCP tools",
-    "/cache": "Cache stats or clear",
+    "/cache": "Cache stats, list workspaces, or clear",
     "/theme": "Switch dark or light theme",
     "/compact": "Toggle compact UI and context",
     "/clear": "Clear chat history",
@@ -799,25 +799,52 @@ class Attachment:
 
 @dataclass
 class Usage:
-    input: int = 0; output: int = 0
+    input: int = 0; output: int = 0; cached: int = 0
     @property
     def total(self): return self.input + self.output
 
 class Cache:
     def __init__(self): CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    def path(self, key): return CACHE_DIR / (hashlib.sha256(key.encode()).hexdigest() + ".json")
+    def _hash(self, key): return hashlib.sha256(key.encode()).hexdigest()
+    def path(self, key, hint=None):
+        h = self._hash(key)
+        if hint:
+            safe = re.sub(r"[^a-zA-Z0-9._-]", "_", hint)[:48].strip("_") or "ws"
+            return CACHE_DIR / f"{safe}__{h[:12]}.json"
+        return CACHE_DIR / f"{h}.json"
+    def find(self, key):
+        h = self._hash(key)
+        legacy = CACHE_DIR / f"{h}.json"
+        if legacy.exists():
+            return legacy
+        for p in CACHE_DIR.glob(f"*__{h[:12]}.json"):
+            return p
+        return None
     def get(self, key, ttl=CACHE_TTL):
-        p = self.path(key)
+        p = self.find(key)
+        if not p: return None
         try:
-            if not p.exists() or time.time() - p.stat().st_mtime > ttl: return None
+            if time.time() - p.stat().st_mtime > ttl: return None
             return json.loads(p.read_text())
         except Exception: return None
-    def set(self, key, value):
-        try: self.path(key).write_text(json.dumps(value))
+    def set(self, key, value, hint=None):
+        try:
+            for old in CACHE_DIR.glob(f"*__{self._hash(key)[:12]}.json"):
+                old.unlink(missing_ok=True)
+            self.path(key, hint=hint).write_text(json.dumps(value))
         except Exception: pass
     def clear(self):
         for p in CACHE_DIR.glob("*.json"): p.unlink(missing_ok=True)
     def stats(self): return len(list(CACHE_DIR.glob("*.json"))), sum(p.stat().st_size for p in CACHE_DIR.glob("*.json"))
+    def workspaces(self):
+        out = []
+        for p in sorted(CACHE_DIR.glob("*__*.json"), key=lambda x: x.stat().st_mtime, reverse=True):
+            try:
+                data = json.loads(p.read_text())
+                if data.get("kind") == "text" and "files" in data:
+                    out.append({"file": p.name, "name": data.get("name", "?"), "files": data.get("files", 1), "chars": data.get("chars", 0), "mtime": p.stat().st_mtime})
+            except Exception: pass
+        return out
 
 class Indexer:
     def __init__(self, cache): self.cache = cache
@@ -826,10 +853,11 @@ class Indexer:
         if not path.exists(): return None
         sig = self.sig_dir(path) if path.is_dir() else self.sig_file(path)
         key = f"idx:{INDEX_VERSION}:{sig}"
+        hint = path.name
         hit = self.cache.get(key)
         if hit: return Attachment(aid, hit["name"], hit["kind"], path, hit["content"], hit["chars"], hit["files"], True)
         att = self.dir(path, aid) if path.is_dir() else self.file(path, aid)
-        if att: self.cache.set(key, {"name": att.name, "kind": att.kind, "content": att.content, "chars": att.chars, "files": att.files})
+        if att: self.cache.set(key, {"name": att.name, "kind": att.kind, "content": att.content, "chars": att.chars, "files": att.files}, hint=hint)
         return att
     def sig_file(self, path):
         s = path.stat(); return f"file:{path}:{s.st_size}:{int(s.st_mtime)}"
@@ -1622,7 +1650,10 @@ class Shell:
             ctx = self.ctx_pct()
             tot_in = self.session_usage.input + self.usage.input
             tot_out = self.session_usage.output + self.usage.output
+            tot_cached = self.session_usage.cached + self.usage.cached
             tok = f"in {tot_in}  out {tot_out}"
+            if tot_cached:
+                tok += f"  cached {tot_cached}"
             if self.compact:
                 bits = [self.model_label(), f"ctx {ctx:.0f}%", mcp, tok]
                 return " | ".join(bits)
@@ -2130,11 +2161,33 @@ class Shell:
         for x in tools:
             self.ui(f"  {x['server']}.{x['name']:<28} {str(x.get('description') or '')[:64]}")
     def cache_cmd(self, rest):
+        rest = (rest or "").strip()
         if rest == "clear":
             self.cache.clear()
             return self.info("cache cleared")
+        if rest in ("list", "ls"):
+            ws = self.cache.workspaces()
+            if not ws:
+                return self.info("no cached workspaces")
+            self.ui("Cached workspaces", "class:label")
+            for w in ws[:30]:
+                age = time.time() - w["mtime"]
+                age_s = f"{int(age)}s" if age < 60 else f"{int(age/60)}m" if age < 3600 else f"{int(age/3600)}h" if age < 86400 else f"{int(age/86400)}d"
+                self.ui(f"  {w['name']}  ·  {w['files']} files  ·  {w['chars']:,} chars  ·  {age_s} ago")
+            return
         n, b = self.cache.stats()
-        self.info(f"cache: {n} entries, {b:,} bytes at {CACHE_DIR}")
+        ws_n = len(self.cache.workspaces())
+        self.info(f"cache: {n} entries ({ws_n} workspaces), {b:,} bytes at {CACHE_DIR}  ·  /cache list  /cache clear")
+    def _auto_refresh_workspaces(self):
+        if not self.attachments: return
+        for i, a in enumerate(self.attachments):
+            if a.kind != "text" or not a.path or not a.path.is_dir(): continue
+            try:
+                if not a.path.exists(): continue
+                new_att = self.indexer.load(str(a.path), a.id)
+                if new_att and new_att.content != a.content:
+                    self.attachments[i] = new_att
+            except Exception: pass
     def context(self):
         if not self.attachments:
             return self.info("no attachments")
@@ -2159,7 +2212,7 @@ class Shell:
             "/export            download chat to ~/Downloads",
             "/export json       download chat as json",
             "/mcp               list connected MCP tools",
-            "/cache [clear]    cache stats or clear",
+            "/cache [list|clear] cache stats, list workspaces, or clear",
             "/theme [dark|light]  switch theme",
             "/compact [on|off] less UI + smaller API context",
             "/clear            clear chat history",
@@ -2170,17 +2223,31 @@ class Shell:
         self.ui("Skills", "class:label")
         for k, v in SKILLS.items():
             self.ui(f"  /skill:{k:<10} {v.split('.')[0]}")
-    def messages(self, prompt):
+    def is_anthropic_model(self, model=None):
+        m = (model or self.model or "").lower()
+        return "claude" in m or "anthropic" in m
+    def messages(self, prompt, model=None):
         system = self.system
         if self.mcp.enabled and self.mcp.servers and user_wants_mcp(prompt):
             system += mcp_integration_prompt(self.mcp, prompt)
-        msgs = [{"role": "system", "content": system}, *self.history[-self.max_history_msgs():]]
+        msgs = [{"role": "system", "content": system}]
         ctx_limit = self.max_ctx_limit()
         texts = [str(a.content) for a in self.attachments if a.kind == "text"]
         images = [{"type": "image_url", "image_url": {"url": f"data:{a.content['mime']};base64,{a.content['data']}"}} for a in self.attachments if a.kind == "image"]
-        if texts or images:
-            content = [{"type": "text", "text": "\n\n".join(texts)[:ctx_limit] + "\n\nUSER:\n" + prompt}, *images]
-            msgs.append({"role": "user", "content": content})
+        if texts:
+            workspace_text = "\n\n".join(texts)[:ctx_limit]
+            intro = ("The following attached context is stable across turns — it is the same on every turn until "
+                     "files change. Refer back to it as needed; do not ask the user to re-paste it.\n\n")
+            ws_payload = intro + workspace_text
+            if self.is_anthropic_model(model):
+                ws_content = [{"type": "text", "text": ws_payload, "cache_control": {"type": "ephemeral"}}]
+                msgs.append({"role": "user", "content": ws_content})
+            else:
+                msgs.append({"role": "user", "content": ws_payload})
+            msgs.append({"role": "assistant", "content": "Acknowledged. I'll use the attached files as context for this conversation."})
+        msgs += self.history[-self.max_history_msgs():]
+        if images:
+            msgs.append({"role": "user", "content": [{"type": "text", "text": prompt}, *images]})
         else:
             msgs.append({"role": "user", "content": prompt})
         return msgs
@@ -2196,7 +2263,7 @@ class Shell:
             self.usage = Usage()
             self.refresh_status()
             self.show_user(prompt)
-            msgs = self.messages(prompt)
+            msgs = self.messages(prompt, model=self.model)
             final = ""
             mcp_task = self.mcp.enabled and bool(self.mcp.servers) and user_wants_mcp(prompt)
             mcp_calls = 0
@@ -2245,6 +2312,8 @@ class Shell:
                 self.history = self.history[-self.max_history_msgs():]
                 self.session_usage.input += self.usage.input
                 self.session_usage.output += self.usage.output
+                self.session_usage.cached += self.usage.cached
+                self._auto_refresh_workspaces()
                 self.refresh_status(invalidate=True)
         except Exception as e:
             self.err(str(e))
@@ -2382,15 +2451,22 @@ class Shell:
         if isinstance(u, dict):
             inp = u.get("prompt_tokens") or u.get("input_tokens") or 0
             out_tok = u.get("completion_tokens") or u.get("output_tokens") or 0
+            details = u.get("prompt_tokens_details") or {}
+            cached = (details.get("cached_tokens") if isinstance(details, dict) else 0) or u.get("cache_read_input_tokens") or 0
         else:
             inp = getattr(u, "prompt_tokens", None) or getattr(u, "input_tokens", None) or 0
             out_tok = getattr(u, "completion_tokens", None) or getattr(u, "output_tokens", None) or 0
+            details = getattr(u, "prompt_tokens_details", None)
+            cached = getattr(details, "cached_tokens", 0) if details else (getattr(u, "cache_read_input_tokens", 0) or 0)
         changed = False
         if inp and int(inp) != self.usage.input:
             self.usage.input = int(inp)
             changed = True
         if out_tok and int(out_tok) != self.usage.output:
             self.usage.output = int(out_tok)
+            changed = True
+        if cached and int(cached) != self.usage.cached:
+            self.usage.cached = int(cached)
             changed = True
         if changed:
             self.refresh_status(invalidate=invalidate)

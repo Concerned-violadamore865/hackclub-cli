@@ -61,7 +61,8 @@ _If this project is useful to you, please consider [starring it on GitHub](https
 - **Themes** — `dark` and `light`
 - **Compact mode** — reduced context window and tighter UI for low-bandwidth sessions
 - **Status bar** with model, context %, MCP state, and live token counts
-- **Local cache** for indexed folders and MCP tool listings
+- **Local cache** for indexed folders and MCP tool listings (named after the workspace for discoverability)
+- **Input-token optimization** — workspace content is sent as a stable prefix so providers can cache it across turns (auto on OpenAI/Gemini; explicit `cache_control` on Anthropic); subsequent prompts in the same conversation cost a fraction of the input tokens
 
 ---
 
@@ -166,7 +167,7 @@ All configuration lives in environment variables (see [Environment variables](#e
 | `/copy` | Copy the last reply to the clipboard |
 | `/export [json]` | Download the conversation to `~/Downloads` |
 | `/mcp` | List connected MCP tools |
-| `/cache [clear]` | Show cache stats or clear the cache |
+| `/cache [list\|clear]` | Show cache stats, list cached workspaces by name, or clear the cache |
 | `/theme [dark\|light]` | Switch theme |
 | `/compact [on\|off]` | Toggle compact mode |
 | `/clear` | Clear chat history |
