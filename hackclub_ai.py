@@ -29,7 +29,7 @@ COMPOSIO_KEY = "COMPOSIO_API_KEY"
 HOME = Path.home() / ".hackclub-ai-shell"
 CACHE_DIR = HOME / "cache"
 MCP_FILE = Path(os.getenv("HC_MCP_CONFIG", str(HOME / "mcp.json")))
-MAX_FILE = int(os.getenv("HC_MAX_FILE", "750000"))
+MAX_FILE = int(os.getenv("HC_MAX_FILE", "2000000"))
 MAX_CTX = int(os.getenv("HC_MAX_CONTEXT", "180000"))
 MAX_FILES = int(os.getenv("HC_MAX_FILES", "120"))
 MAX_TURNS = int(os.getenv("HC_MAX_TURNS", "20"))
@@ -852,35 +852,94 @@ class Indexer:
         body = f"### Attachment: {path.name}\n```text\n{text[:MAX_CTX]}\n```"
         return Attachment(aid, f"File: {path.name}", "text", path, body, len(body))
     def dir(self, root, aid):
-        blocks, tree, total, count = [], [f"{root.name}/"], 0, 0
+        blocks, tree, total, count, skipped = [], [f"{root.name}/"], 0, 0, 0
         for base, dirs, files in os.walk(root):
             dirs[:] = sorted(d for d in dirs if d not in IGNORE_DIRS and not d.startswith("."))
             rel = Path(base).relative_to(root); indent = "  " * (len(rel.parts) + 1)
             tree += [f"{indent}{d}/" for d in dirs]
             for name in sorted(files):
-                if count >= MAX_FILES or total >= MAX_CTX: break
                 if name in IGNORE_FILES or name.startswith("."): continue
-                path = Path(base) / name; text = self.text(path)
-                if not text: continue
+                path = Path(base) / name
+                label = self.file_label(path)
+                tree.append(f"{indent}{label}")
+                if count >= MAX_FILES or total >= MAX_CTX:
+                    skipped += 1
+                    continue
+                text = self.text(path)
+                if not text:
+                    skipped += 1
+                    continue
                 r = path.relative_to(root).as_posix()
                 chunk = f"--- START FILE: {r} ---\n{text}\n--- END FILE: {r} ---"[:MAX_CTX - total]
-                blocks.append(chunk); total += len(chunk); count += 1; tree.append(f"{indent}{name}")
-            if count >= MAX_FILES or total >= MAX_CTX: break
-        if not blocks: return None
-        body = "\n".join(["### Workspace: " + root.name, "```text", *tree[:400], "```", *blocks])
+                blocks.append(chunk); total += len(chunk); count += 1
+        header = ["### Workspace: " + root.name, "```text", *tree[:400], "```"]
+        if skipped:
+            header.append(f"_({skipped} file(s) listed in the tree but not included in context — unsupported type, too large, or limit reached.)_")
+        body = "\n".join(header + blocks) if blocks else "\n".join(header)
         return Attachment(aid, f"Workspace: {root.name}", "text", root, body, len(body), count)
+    def file_label(self, path):
+        try:
+            size = path.stat().st_size
+            if size > MAX_FILE:
+                return f"{path.name}  [skipped: {size/1024/1024:.1f}MB > limit]"
+            if path.suffix.lower() not in TEXT_EXT | {".docx"}:
+                return f"{path.name}  [skipped: unsupported type]"
+            return path.name
+        except Exception:
+            return path.name
     def text(self, path):
         try:
-            if path.stat().st_size > MAX_FILE or path.suffix.lower() not in TEXT_EXT | {".docx"}: return None
+            if path.stat().st_size > MAX_FILE: return None
+            if path.suffix.lower() not in TEXT_EXT | {".docx"}: return None
             if path.suffix.lower() == ".docx": return self.docx(path)
             return path.read_text("utf-8", errors="replace")
-        except Exception: return None
+        except Exception:
+            return None
     def docx(self, path):
+        ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
+        parts = []
         try:
-            with zipfile.ZipFile(path) as z: xml = z.read("word/document.xml")
-            root = ET.fromstring(xml); ns = {"w": "http://schemas.openxmlformats.org/wordprocessingml/2006/main"}
-            return "\n".join("".join(t.text for t in p.findall(".//w:t", ns) if t.text) for p in root.findall(".//w:p", ns))
-        except Exception: return None
+            with zipfile.ZipFile(path) as z:
+                names = z.namelist()
+                if "word/document.xml" not in names:
+                    return f"[unable to extract .docx text: missing word/document.xml in archive — {path.name}]"
+                xml_parts = ["word/document.xml"]
+                xml_parts += sorted(n for n in names if (n.startswith("word/header") or n.startswith("word/footer")) and n.endswith(".xml"))
+                xml_parts += [n for n in ("word/footnotes.xml", "word/endnotes.xml") if n in names]
+                for fname in xml_parts:
+                    try:
+                        xml = z.read(fname)
+                    except Exception:
+                        continue
+                    try:
+                        root = ET.fromstring(xml)
+                    except ET.ParseError:
+                        continue
+                    for p in root.findall(".//w:p", ns):
+                        line = "".join(t.text for t in p.findall(".//w:t", ns) if t.text)
+                        if line.strip():
+                            parts.append(line)
+                    for tbl in root.findall(".//w:tbl", ns):
+                        for tr in tbl.findall(".//w:tr", ns):
+                            cells = []
+                            for tc in tr.findall(".//w:tc", ns):
+                                cell = " ".join("".join(t.text for t in p.findall(".//w:t", ns) if t.text) for p in tc.findall(".//w:p", ns)).strip()
+                                cells.append(cell)
+                            if any(cells):
+                                parts.append(" | ".join(cells))
+        except zipfile.BadZipFile:
+            return f"[unable to extract .docx text: not a valid .docx archive — {path.name}]"
+        except Exception as e:
+            return f"[unable to extract .docx text: {type(e).__name__}: {e} — {path.name}]"
+        if not parts:
+            return f"[.docx opened but no readable text found — {path.name}]"
+        seen = set()
+        unique = []
+        for line in parts:
+            if line not in seen:
+                seen.add(line)
+                unique.append(line)
+        return "\n".join(unique)
 
 def envv(x):
     if isinstance(x, str):
@@ -1877,7 +1936,16 @@ class Shell:
         if not att:
             if p.is_dir():
                 return self.err(f"folder empty or no readable text files: {p.name}")
-            return self.err(f"could not read file: {p.name}")
+            ext = p.suffix.lower() or "(none)"
+            if ext not in TEXT_EXT | {".docx"}:
+                return self.err(f"could not read file: {p.name} — unsupported type {ext}")
+            try:
+                size = p.stat().st_size
+                if size > MAX_FILE:
+                    return self.err(f"could not read file: {p.name} — too large ({size/1024/1024:.1f}MB > {MAX_FILE/1024/1024:.1f}MB limit, raise HC_MAX_FILE to override)")
+            except Exception:
+                pass
+            return self.err(f"could not read file: {p.name} — file may be corrupted, encrypted, or empty")
         self.attachments.append(att); self.aid += 1
         if p.is_dir():
             self.workspace_name = p.name

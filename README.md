@@ -293,6 +293,18 @@ When reporting bugs, please include:
 
 ---
 
+## Support
+
+If this project saved you time or you enjoy using it, the best way to say thanks is to **[star the repository on GitHub](https://github.com/random-guy-05/hackclub-cli)**. Stars make the project easier to discover and help justify the time spent maintaining it.
+
+Other ways to help:
+
+- Report bugs and request features via [issues](https://github.com/random-guy-05/hackclub-cli/issues)
+- Open a pull request — see [Contributing](#contributing)
+- Share the project with anyone you think might find it useful
+
+---
+
 ## Disclaimer
 
 This project is **not affiliated with Hack Club, Composio, OpenRouter, or any model provider**. It is an independent, community-built client.
